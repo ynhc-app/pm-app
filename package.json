@@ -16,6 +16,8 @@
     "@prisma/adapter-pg": "^7.9.0",
     "@prisma/client": "^7.9.0",
     "better-sqlite3": "^13.0.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.27.0",
     "next": "16.2.12",
     "pg": "^8.22.0",

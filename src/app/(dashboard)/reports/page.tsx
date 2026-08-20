@@ -2,32 +2,56 @@
 
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { getFullReportData } from "@/app/actions/reports";
 import {
   FileSpreadsheet,
-  Printer,
+  FileDown,
   Loader2,
   TrendingDown,
   TrendingUp,
   DollarSign,
-  Calendar,
-  Building2,
   Layers,
-  X,
-  Download,
+  CheckCircle2,
 } from "lucide-react";
 
 function formatRp(val: number): string {
   return `Rp ${val.toLocaleString("id-ID")}`;
 }
 
+function getFormattedTimestamp(): { dateStr: string; fileTimestamp: string; displayDate: string } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+
+  const dateStr = `${year}-${month}-${day}`;
+  const fileTimestamp = `${year}-${month}-${day}_${hours}${minutes}`;
+  const displayDate = now.toLocaleDateString("id-ID", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }) + ` ${hours}:${minutes} WIB`;
+
+  return { dateStr, fileTimestamp, displayDate };
+}
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_");
+}
+
 export default function ReportsPage() {
   const [loadingType, setLoadingType] = useState<string | null>(null);
-  const [previewModal, setPreviewModal] = useState<{
-    title: string;
-    type: "variance" | "expenses" | "scurve" | "rab";
-    data: any;
-  } | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setSuccessToast(msg);
+    setTimeout(() => setSuccessToast(null), 3500);
+  };
 
   // ── 1. Export Excel Handler ──────────────────────────────────────────────
   const handleExportExcel = async (reportType: "variance" | "expenses" | "scurve" | "rab") => {
@@ -35,8 +59,13 @@ export default function ReportsPage() {
     try {
       const { project, rabItems, expenses, variances, scurve } = await getFullReportData();
       const wb = XLSX.utils.book_new();
+      const { fileTimestamp } = getFormattedTimestamp();
+      const projName = sanitizeFilename(project.name);
+
+      let filename = "";
 
       if (reportType === "variance") {
+        filename = `Laporan_Varian_Biaya_${projName}_${fileTimestamp}.xlsx`;
         const rows = variances.map((v, i) => ({
           No: i + 1,
           "Kode Item": v.rabItemCode,
@@ -50,8 +79,8 @@ export default function ReportsPage() {
         }));
         const ws = XLSX.utils.json_to_sheet(rows);
         XLSX.utils.book_append_sheet(wb, ws, "Varian Biaya");
-        XLSX.writeFile(wb, `Laporan_Varian_Biaya_${project.name.replace(/\s+/g, "_")}.xlsx`);
       } else if (reportType === "expenses") {
+        filename = `Rekap_Pengeluaran_${projName}_${fileTimestamp}.xlsx`;
         const rows = expenses.map((e, i) => ({
           No: i + 1,
           Tanggal: new Date(e.transactionDate).toLocaleDateString("id-ID"),
@@ -66,8 +95,8 @@ export default function ReportsPage() {
         }));
         const ws = XLSX.utils.json_to_sheet(rows);
         XLSX.utils.book_append_sheet(wb, ws, "Rekap Pengeluaran");
-        XLSX.writeFile(wb, `Rekap_Pengeluaran_${project.name.replace(/\s+/g, "_")}.xlsx`);
       } else if (reportType === "rab") {
+        filename = `Master_RAB_AHSP_${projName}_${fileTimestamp}.xlsx`;
         const rows = rabItems.map((item, i) => ({
           No: i + 1,
           "Kode Item": item.itemCode,
@@ -84,8 +113,8 @@ export default function ReportsPage() {
         }));
         const ws = XLSX.utils.json_to_sheet(rows);
         XLSX.utils.book_append_sheet(wb, ws, "Master RAB");
-        XLSX.writeFile(wb, `Master_RAB_AHSP_${project.name.replace(/\s+/g, "_")}.xlsx`);
       } else if (reportType === "scurve") {
+        filename = `Laporan_Kurva_S_${projName}_${fileTimestamp}.xlsx`;
         const rows = scurve.map((s) => ({
           Minggu: s.week,
           Periode: s.weekLabel,
@@ -96,39 +125,371 @@ export default function ReportsPage() {
         }));
         const ws = XLSX.utils.json_to_sheet(rows);
         XLSX.utils.book_append_sheet(wb, ws, "Kurva S Progres");
-        XLSX.writeFile(wb, `Laporan_Kurva_S_${project.name.replace(/\s+/g, "_")}.xlsx`);
       }
+
+      XLSX.writeFile(wb, filename);
+      showToast(`Berhasil mengunduh Excel: ${filename}`);
     } catch (err) {
       console.error(err);
-      alert("Gagal mengunduh file Excel. Pastikan koneksi server aktif.");
+      alert("Gagal mengunduh file Excel. Silakan coba lagi.");
     } finally {
       setLoadingType(null);
     }
   };
 
-  // ── 2. Open PDF / Print Preview Modal ─────────────────────────────────────
-  const handleOpenPrintPreview = async (
-    title: string,
-    type: "variance" | "expenses" | "scurve" | "rab"
-  ) => {
-    setLoadingType(`pdf-${type}`);
+  // ── 2. Automatic Direct PDF Generator & Downloader ────────────────────────
+  const handleExportPDF = async (reportType: "variance" | "expenses" | "scurve" | "rab") => {
+    setLoadingType(`pdf-${reportType}`);
     try {
-      const data = await getFullReportData();
-      setPreviewModal({
-        title,
-        type,
-        data,
+      const { project, rabItems, expenses, variances, scurve } = await getFullReportData();
+      const { fileTimestamp, displayDate } = getFormattedTimestamp();
+      const projName = sanitizeFilename(project.name);
+
+      // Initialize jsPDF in landscape or portrait
+      const isLandscape = reportType === "variance" || reportType === "rab";
+      const doc = new jsPDF({
+        orientation: isLandscape ? "landscape" : "portrait",
+        unit: "mm",
+        format: "a4",
       });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      // Header helper function
+      const renderHeader = (title: string) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(24, 24, 27); // zinc-900
+        doc.text(title.toUpperCase(), pageWidth / 2, 14, { align: "center" });
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(113, 113, 122); // zinc-500
+        doc.text(
+          `Proyek: ${project.name}  |  Klien: ${project.clientName}`,
+          pageWidth / 2,
+          19,
+          { align: "center" }
+        );
+        doc.text(`Waktu Cetak: ${displayDate}`, pageWidth / 2, 23.5, {
+          align: "center",
+        });
+
+        // Horizontal Line
+        doc.setDrawColor(228, 228, 231); // zinc-200
+        doc.setLineWidth(0.4);
+        doc.line(14, 26, pageWidth - 14, 26);
+      };
+
+      let filename = "";
+
+      if (reportType === "variance") {
+        filename = `Laporan_Varian_Biaya_${projName}_${fileTimestamp}.pdf`;
+        renderHeader("Laporan Varian Biaya Proyek (Cost Variance)");
+
+        const tableData = variances.map((v, i) => [
+          i + 1,
+          v.rabItemCode,
+          v.rabItemDescription,
+          v.rabItemUnit || "-",
+          formatRp(v.budgetAmount),
+          formatRp(v.spentAmount),
+          formatRp(v.remainingAmount),
+          `${v.costVariancePercent.toFixed(1)}%`,
+          v.isOverBudget ? "OVERRUN" : "AMAN",
+        ]);
+
+        const totalBudget = variances.reduce((s, v) => s + v.budgetAmount, 0);
+        const totalSpent = variances.reduce((s, v) => s + v.spentAmount, 0);
+        const totalRemaining = totalBudget - totalSpent;
+
+        autoTable(doc, {
+          startY: 30,
+          head: [
+            [
+              "No",
+              "Kode",
+              "Uraian Pekerjaan",
+              "Satuan",
+              "Anggaran RAB",
+              "Realisasi",
+              "Sisa Anggaran",
+              "% Realisasi",
+              "Status",
+            ],
+          ],
+          body: tableData,
+          foot: [
+            [
+              "",
+              "",
+              "TOTAL KESELURUHAN",
+              "",
+              formatRp(totalBudget),
+              formatRp(totalSpent),
+              formatRp(totalRemaining),
+              totalBudget > 0 ? `${((totalSpent / totalBudget) * 100).toFixed(1)}%` : "0%",
+              totalSpent > totalBudget ? "OVERRUN" : "AMAN",
+            ],
+          ],
+          theme: "striped",
+          headStyles: {
+            fillColor: [24, 24, 27],
+            textColor: [255, 255, 255],
+            fontSize: 8,
+            fontStyle: "bold",
+            halign: "center",
+          },
+          footStyles: {
+            fillColor: [244, 244, 245],
+            textColor: [24, 24, 27],
+            fontSize: 8,
+            fontStyle: "bold",
+          },
+          styles: {
+            fontSize: 7.5,
+            cellPadding: 2,
+            overflow: "linebreak",
+          },
+          columnStyles: {
+            0: { halign: "center", cellWidth: 10 },
+            1: { halign: "center", cellWidth: 18 },
+            2: { halign: "left" },
+            3: { halign: "center", cellWidth: 14 },
+            4: { halign: "right", cellWidth: 32 },
+            5: { halign: "right", cellWidth: 32 },
+            6: { halign: "right", cellWidth: 32 },
+            7: { halign: "center", cellWidth: 20 },
+            8: { halign: "center", cellWidth: 20 },
+          },
+          margin: { left: 14, right: 14 },
+        });
+      } else if (reportType === "expenses") {
+        filename = `Rekap_Pengeluaran_${projName}_${fileTimestamp}.pdf`;
+        renderHeader("Rekapitulasi Pengeluaran & Transaksi Proyek");
+
+        const tableData = expenses.map((e, i) => [
+          i + 1,
+          new Date(e.transactionDate).toLocaleDateString("id-ID"),
+          e.category,
+          e.vendorName,
+          e.rabItemDescription || "Pengeluaran Umum",
+          e.volume ? `${e.volume} ${e.unit || ""}` : "-",
+          formatRp(e.amount),
+        ]);
+
+        const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+
+        autoTable(doc, {
+          startY: 30,
+          head: [
+            [
+              "No",
+              "Tanggal",
+              "Kategori",
+              "Vendor / Supplier",
+              "Item RAB Terkait",
+              "Volume",
+              "Total Nominal",
+            ],
+          ],
+          body: tableData,
+          foot: [
+            ["", "", "", "", "TOTAL PENGELUARAN", "", formatRp(totalExpenses)],
+          ],
+          theme: "striped",
+          headStyles: {
+            fillColor: [24, 24, 27],
+            textColor: [255, 255, 255],
+            fontSize: 8.5,
+            fontStyle: "bold",
+            halign: "center",
+          },
+          footStyles: {
+            fillColor: [244, 244, 245],
+            textColor: [24, 24, 27],
+            fontSize: 8.5,
+            fontStyle: "bold",
+          },
+          styles: {
+            fontSize: 8,
+            cellPadding: 2.2,
+          },
+          columnStyles: {
+            0: { halign: "center", cellWidth: 10 },
+            1: { halign: "center", cellWidth: 24 },
+            2: { halign: "center", cellWidth: 24 },
+            3: { halign: "left" },
+            4: { halign: "left" },
+            5: { halign: "center", cellWidth: 22 },
+            6: { halign: "right", cellWidth: 34 },
+          },
+          margin: { left: 14, right: 14 },
+        });
+      } else if (reportType === "rab") {
+        filename = `Master_RAB_AHSP_${projName}_${fileTimestamp}.pdf`;
+        renderHeader("Master Anggaran Biaya (RAB) & Rincian AHSP");
+
+        const tableData = rabItems.map((item, i) => [
+          i + 1,
+          item.itemCode,
+          item.description,
+          item.unit || "-",
+          item.volume > 0 ? item.volume.toLocaleString("id-ID") : "-",
+          item.unitPrice > 0 ? formatRp(item.unitPrice) : "-",
+          formatRp(item.totalPrice),
+          `${item.weightPercentage.toFixed(2)}%`,
+          item.materialSubtotal > 0 ? formatRp(item.materialSubtotal) : "-",
+          item.laborSubtotal > 0 ? formatRp(item.laborSubtotal) : "-",
+          item.equipmentSubtotal > 0 ? formatRp(item.equipmentSubtotal) : "-",
+          item.overheadSubtotal > 0 ? formatRp(item.overheadSubtotal) : "-",
+        ]);
+
+        const totalRab = project.totalBudget || 0;
+
+        autoTable(doc, {
+          startY: 30,
+          head: [
+            [
+              "No",
+              "Kode",
+              "Uraian Pekerjaan",
+              "Sat",
+              "Vol",
+              "Harga Satuan",
+              "Total Anggaran",
+              "Bobot",
+              "Material",
+              "Upah",
+              "Alat",
+              "Overhead",
+            ],
+          ],
+          body: tableData,
+          foot: [
+            [
+              "",
+              "",
+              "TOTAL NILAI PROYEK",
+              "",
+              "",
+              "",
+              formatRp(totalRab),
+              "100.00%",
+              "",
+              "",
+              "",
+              "",
+            ],
+          ],
+          theme: "striped",
+          headStyles: {
+            fillColor: [24, 24, 27],
+            textColor: [255, 255, 255],
+            fontSize: 7.5,
+            fontStyle: "bold",
+            halign: "center",
+          },
+          footStyles: {
+            fillColor: [244, 244, 245],
+            textColor: [24, 24, 27],
+            fontSize: 8,
+            fontStyle: "bold",
+          },
+          styles: {
+            fontSize: 7,
+            cellPadding: 1.8,
+          },
+          columnStyles: {
+            0: { halign: "center", cellWidth: 8 },
+            1: { halign: "center", cellWidth: 14 },
+            2: { halign: "left" },
+            3: { halign: "center", cellWidth: 10 },
+            4: { halign: "center", cellWidth: 12 },
+            5: { halign: "right", cellWidth: 24 },
+            6: { halign: "right", cellWidth: 28 },
+            7: { halign: "center", cellWidth: 16 },
+            8: { halign: "right", cellWidth: 22 },
+            9: { halign: "right", cellWidth: 22 },
+            10: { halign: "right", cellWidth: 20 },
+            11: { halign: "right", cellWidth: 20 },
+          },
+          margin: { left: 10, right: 10 },
+        });
+      } else if (reportType === "scurve") {
+        filename = `Laporan_Kurva_S_${projName}_${fileTimestamp}.pdf`;
+        renderHeader("Laporan Kemajuan Progres Fisik (Kurva-S)");
+
+        const tableData = scurve.map((s) => [
+          s.week,
+          s.weekLabel,
+          `${s.planned.toFixed(2)}%`,
+          s.actual !== null ? `${s.actual.toFixed(2)}%` : "-",
+          s.cost !== null ? `${s.cost.toFixed(2)}%` : "-",
+          s.actual !== null ? `${(s.actual - s.planned).toFixed(2)}%` : "-",
+        ]);
+
+        autoTable(doc, {
+          startY: 30,
+          head: [
+            [
+              "Minggu Ke",
+              "Periode / Label",
+              "Rencana Kumulatif (%)",
+              "Realisasi Fisik Kumulatif (%)",
+              "Realisasi Biaya Kumulatif (%)",
+              "Deviasi Fisik (%)",
+            ],
+          ],
+          body: tableData,
+          theme: "striped",
+          headStyles: {
+            fillColor: [24, 24, 27],
+            textColor: [255, 255, 255],
+            fontSize: 8.5,
+            fontStyle: "bold",
+            halign: "center",
+          },
+          styles: {
+            fontSize: 8,
+            cellPadding: 2.5,
+          },
+          columnStyles: {
+            0: { halign: "center", cellWidth: 24 },
+            1: { halign: "center", cellWidth: 32 },
+            2: { halign: "right", cellWidth: 36 },
+            3: { halign: "right", cellWidth: 36 },
+            4: { halign: "right", cellWidth: 36 },
+            5: { halign: "right" },
+          },
+          margin: { left: 14, right: 14 },
+        });
+      }
+
+      // Add Page Numbers in Footer
+      const totalPages = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(161, 161, 170); // zinc-400
+        const pageHeight = doc.internal.pageSize.getHeight();
+        doc.text(
+          `Halaman ${i} dari ${totalPages}  •  BuildTracker Pro`,
+          pageWidth / 2,
+          pageHeight - 8,
+          { align: "center" }
+        );
+      }
+
+      // Download directly
+      doc.save(filename);
+      showToast(`Berhasil mengunduh PDF: ${filename}`);
     } catch (err) {
-      console.error(err);
-      alert("Gagal memuat data laporan.");
+      console.error("PDF Generation Error:", err);
+      alert("Gagal membuat file PDF. Silakan coba lagi.");
     } finally {
       setLoadingType(null);
     }
-  };
-
-  const handleTriggerPrint = () => {
-    window.print();
   };
 
   const reportCards = [
@@ -186,9 +547,17 @@ export default function ReportsPage() {
           Laporan &amp; Unduhan
         </h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Ekspor dokumen resmi dan analisis kemajuan serta keuangan proyek konstruksi ke format Excel dan PDF.
+          Ekspor dokumen resmi dan analisis kemajuan serta keuangan proyek konstruksi ke format Excel dan PDF secara otomatis.
         </p>
       </div>
+
+      {/* Success Notification Toast */}
+      {successToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-xl bg-emerald-600 px-4 py-3 text-white shadow-2xl transition-all animate-bounce">
+          <CheckCircle2 className="h-5 w-5 shrink-0" />
+          <p className="text-xs font-semibold">{successToast}</p>
+        </div>
+      )}
 
       {/* Reports Listing Grid */}
       <div className="grid gap-6 md:grid-cols-2">
@@ -222,26 +591,28 @@ export default function ReportsPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handleOpenPrintPreview(report.title, report.id)}
-                    disabled={isPdfLoading}
+                    onClick={() => handleExportPDF(report.id)}
+                    disabled={isPdfLoading || isExcelLoading}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-800 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-50"
+                    title="Buat & Unduh File PDF Otomatis"
                   >
                     {isPdfLoading ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <Printer className="h-3.5 w-3.5 text-zinc-600" />
+                      <FileDown className="h-3.5 w-3.5 text-rose-500" />
                     )}
-                    Cetak / PDF
+                    Unduh PDF
                   </button>
                   <button
                     onClick={() => handleExportExcel(report.id)}
-                    disabled={isExcelLoading}
+                    disabled={isExcelLoading || isPdfLoading}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-50 transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 disabled:opacity-50"
+                    title="Unduh Spreadsheet Excel"
                   >
                     {isExcelLoading ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <FileSpreadsheet className="h-3.5 w-3.5" />
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
                     )}
                     Unduh Excel
                   </button>
@@ -251,182 +622,6 @@ export default function ReportsPage() {
           );
         })}
       </div>
-
-      {/* ── Modal Print & PDF Preview ─────────────────────────────────────── */}
-      {previewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-sm">
-          <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-850">
-              <div className="flex items-center gap-2.5">
-                <Printer className="h-5 w-5 text-blue-600" />
-                <div>
-                  <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-50">
-                    {previewModal.title}
-                  </h3>
-                  <p className="text-xs text-zinc-500">
-                    Proyek: {previewModal.data.project.name}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleTriggerPrint}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-xs"
-                >
-                  <Printer className="h-3.5 w-3.5" />
-                  Cetak / Simpan PDF
-                </button>
-                <button
-                  onClick={() => setPreviewModal(null)}
-                  className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-800"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Printable Content Body */}
-            <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 print:p-0">
-              {/* Document Letterhead (Kop Surat) */}
-              <div className="border-b-2 border-zinc-900 pb-4 text-center space-y-1">
-                <h2 className="text-xl font-black uppercase tracking-wider">
-                  {previewModal.title}
-                </h2>
-                <p className="text-sm font-semibold text-zinc-700">
-                  {previewModal.data.project.name} • {previewModal.data.project.clientName}
-                </p>
-                <p className="text-xs text-zinc-500">
-                  Dicetak pada: {new Date().toLocaleDateString("id-ID", { dateStyle: "full" })}
-                </p>
-              </div>
-
-              {/* Table Data based on Type */}
-              {previewModal.type === "variance" && (
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-zinc-300 bg-zinc-100 text-zinc-700 font-bold">
-                      <th className="p-2 text-left">Kode</th>
-                      <th className="p-2 text-left">Uraian Pekerjaan</th>
-                      <th className="p-2 text-right">Anggaran RAB</th>
-                      <th className="p-2 text-right">Realisasi</th>
-                      <th className="p-2 text-right">Sisa Anggaran</th>
-                      <th className="p-2 text-center">% Realisasi</th>
-                      <th className="p-2 text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-200">
-                    {previewModal.data.variances.map((v: any) => (
-                      <tr key={v.rabItemId}>
-                        <td className="p-2 font-mono">{v.rabItemCode}</td>
-                        <td className="p-2 font-medium">{v.rabItemDescription}</td>
-                        <td className="p-2 text-right font-mono">{formatRp(v.budgetAmount)}</td>
-                        <td className="p-2 text-right font-mono">{formatRp(v.spentAmount)}</td>
-                        <td className="p-2 text-right font-mono font-semibold">{formatRp(v.remainingAmount)}</td>
-                        <td className="p-2 text-center font-mono">{v.costVariancePercent.toFixed(1)}%</td>
-                        <td className="p-2 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${v.isOverBudget ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`}>
-                            {v.isOverBudget ? "OVERRUN" : "AMAN"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-
-              {previewModal.type === "expenses" && (
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-zinc-300 bg-zinc-100 text-zinc-700 font-bold">
-                      <th className="p-2 text-left">Tanggal</th>
-                      <th className="p-2 text-left">Kategori</th>
-                      <th className="p-2 text-left">Vendor / Uraian</th>
-                      <th className="p-2 text-left">Item RAB Terkait</th>
-                      <th className="p-2 text-right">Volume</th>
-                      <th className="p-2 text-right">Total Nominal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-200">
-                    {previewModal.data.expenses.map((e: any) => (
-                      <tr key={e.id}>
-                        <td className="p-2 font-mono">{new Date(e.transactionDate).toLocaleDateString("id-ID")}</td>
-                        <td className="p-2 font-semibold">{e.category}</td>
-                        <td className="p-2">{e.vendorName}</td>
-                        <td className="p-2 text-zinc-600">{e.rabItemDescription || "-"}</td>
-                        <td className="p-2 text-right font-mono">{e.volume ? `${e.volume} ${e.unit || ""}` : "-"}</td>
-                        <td className="p-2 text-right font-mono font-bold">{formatRp(e.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-
-              {previewModal.type === "rab" && (
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-zinc-300 bg-zinc-100 text-zinc-700 font-bold">
-                      <th className="p-2 text-left">Kode</th>
-                      <th className="p-2 text-left">Uraian Pekerjaan</th>
-                      <th className="p-2 text-center">Satuan</th>
-                      <th className="p-2 text-right">Volume</th>
-                      <th className="p-2 text-right">Harga Satuan</th>
-                      <th className="p-2 text-right">Total Anggaran</th>
-                      <th className="p-2 text-right">Bobot</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-200">
-                    {previewModal.data.rabItems.map((item: any) => (
-                      <tr key={item.id}>
-                        <td className="p-2 font-mono">{item.itemCode}</td>
-                        <td className="p-2 font-medium">{item.description}</td>
-                        <td className="p-2 text-center">{item.unit || "-"}</td>
-                        <td className="p-2 text-right font-mono">{item.volume > 0 ? item.volume : ""}</td>
-                        <td className="p-2 text-right font-mono">{item.unitPrice > 0 ? formatRp(item.unitPrice) : ""}</td>
-                        <td className="p-2 text-right font-mono font-bold">{formatRp(item.totalPrice)}</td>
-                        <td className="p-2 text-right font-mono">{item.weightPercentage.toFixed(2)}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-
-              {previewModal.type === "scurve" && (
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-zinc-300 bg-zinc-100 text-zinc-700 font-bold">
-                      <th className="p-2 text-center">Minggu</th>
-                      <th className="p-2 text-left">Periode</th>
-                      <th className="p-2 text-right">Rencana Kumulatif (%)</th>
-                      <th className="p-2 text-right">Realisasi Fisik Kumulatif (%)</th>
-                      <th className="p-2 text-right">Deviasi Progres (%)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-200">
-                    {previewModal.data.scurve.map((s: any) => (
-                      <tr key={s.week}>
-                        <td className="p-2 text-center font-mono font-bold">{s.week}</td>
-                        <td className="p-2">{s.weekLabel}</td>
-                        <td className="p-2 text-right font-mono">{s.planned.toFixed(2)}%</td>
-                        <td className="p-2 text-right font-mono font-semibold">
-                          {s.actual !== null ? `${s.actual.toFixed(2)}%` : "-"}
-                        </td>
-                        <td className="p-2 text-right font-mono">
-                          {s.actual !== null ? (
-                            <span className={s.actual >= s.planned ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}>
-                              {(s.actual - s.planned).toFixed(2)}%
-                            </span>
-                          ) : "-"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

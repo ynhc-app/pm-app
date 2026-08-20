@@ -1,0 +1,102 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  // Untuk menggunakan Supabase (PostgreSQL), ubah provider menjadi "postgresql" 
+  // dan sesuaikan URL database di file .env Anda.
+  provider = "postgresql"
+  // provider = "sqlite"
+}
+
+model Project {
+  id          String       @id @default(uuid())
+  name        String
+  clientName  String       @map("client_name")
+  startDate   DateTime     @map("start_date")
+  endDate     DateTime     @map("end_date")
+  totalBudget Decimal      @map("total_budget")
+  rabItems    RabItem[]
+  expenses    Expense[]
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@map("projects")
+}
+
+model RabItem {
+  id               String        @id @default(uuid())
+  projectId        String        @map("project_id")
+  project          Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId         String?       @map("parent_id")
+  parent           RabItem?      @relation("SubRabItems", fields: [parentId], references: [id], onDelete: Cascade)
+  children         RabItem[]     @relation("SubRabItems")
+  itemCode         String        @map("item_code")
+  description      String
+  unit             String        // e.g. m2, m3, bh, kg, ls
+  volume           Decimal
+  unitPrice        Decimal       @map("unit_price")
+  totalPrice       Decimal       @map("total_price") // volume * unit_price
+  weightPercentage Decimal       @map("weight_percentage") // Calculated weight of this item in the project (percentage of total budget)
+  expenses         Expense[]
+  progressLogs     ProgressLog[]
+  components       RabComponent[]
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  @@map("rab_items")
+}
+
+model Expense {
+  id              String      @id @default(uuid())
+  projectId       String      @map("project_id")
+  project         Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rabItemId       String?     @map("rab_item_id")
+  rabItem         RabItem?    @relation(fields: [rabItemId], references: [id], onDelete: SetNull)
+  category        String      // Enum: MATERIAL, LABOR, EQUIPMENT, OVERHEAD
+  vendorName      String      @map("vendor_name")
+  volume          Decimal?
+  unitPrice       Decimal?    @map("unit_price")
+  unit            String?
+  amount          Decimal
+  transactionDate DateTime    @map("transaction_date")
+  proofImageUrl   String?     @map("proof_image_url")
+  notes           String?
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  @@map("expenses")
+}
+
+model ProgressLog {
+  id                 String   @id @default(uuid())
+  rabItemId          String   @map("rab_item_id")
+  rabItem            RabItem  @relation(fields: [rabItemId], references: [id], onDelete: Cascade)
+  weekNumber         Int      @map("week_number")
+  logDate            DateTime @map("log_date")
+  progressPercentage Decimal  @map("progress_percentage") // Physical progress percentage (0 - 100)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("progress_logs")
+}
+
+model RabComponent {
+  id         String   @id @default(uuid())
+  rabItemId  String   @map("rab_item_id")
+  rabItem    RabItem  @relation(fields: [rabItemId], references: [id], onDelete: Cascade)
+  category   String   // MATERIAL, LABOR, EQUIPMENT, OVERHEAD
+  name       String
+  unit       String?
+  volume     Decimal  @default(1)
+  unitPrice  Decimal  @default(0) @map("unit_price")
+  totalPrice Decimal  @default(0) @map("total_price")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("rab_components")
+}

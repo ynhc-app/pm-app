@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { getOrCreateDefaultProject } from "./rab";
+import { requireAdmin } from "./auth";
 
 export type ExpenseCategory = "MATERIAL" | "LABOR" | "EQUIPMENT" | "OVERHEAD";
 
@@ -216,6 +217,7 @@ export async function saveExpense(data: {
   proofImageUrl: string | null;
   notes: string | null;
 }) {
+  await requireAdmin();
   const project = await getOrCreateDefaultProject();
 
   const payload = {
@@ -246,6 +248,7 @@ export async function saveExpense(data: {
  * Delete an expense.
  */
 export async function deleteExpense(id: string) {
+  await requireAdmin();
   await db.expense.delete({ where: { id } });
   revalidatePath("/expenses");
   revalidatePath("/dashboard");
@@ -270,6 +273,7 @@ export interface ImportExpenseRow {
 export async function importExpenses(
   rows: ImportExpenseRow[]
 ): Promise<{ imported: number; errors: number }> {
+  await requireAdmin();
   const project = await getOrCreateDefaultProject();
   let imported = 0;
   let errors = 0;

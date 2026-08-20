@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { requireAdmin } from "./auth";
 
 export type ComponentCategory = "MATERIAL" | "LABOR" | "EQUIPMENT" | "OVERHEAD";
 
@@ -259,6 +260,7 @@ export async function saveRabItem(data: {
     totalPrice?: number;
   }[];
 }) {
+  await requireAdmin();
   const componentsList = (data.components || []).filter(c => c.name && c.name.trim() !== "");
   const hasComponents = componentsList.length > 0;
   
@@ -350,6 +352,7 @@ export async function saveRabItem(data: {
  * Delete a RAB item. Cascade delete is handled by database schema configuration (onDelete: Cascade).
  */
 export async function deleteRabItem(id: string, projectId: string) {
+  await requireAdmin();
   await db.rabItem.delete({
     where: { id },
   });

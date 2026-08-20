@@ -16,6 +16,7 @@ import {
 } from "@/app/actions/expenses";
 import { getRabItems, SerializedRabItem } from "@/app/actions/rab";
 import { getOrCreateDefaultProject } from "@/app/actions/rab";
+import { useAuth } from "@/lib/auth-context";
 import {
   Plus,
   Edit3,
@@ -258,6 +259,7 @@ function downloadTemplate(rabItems: SerializedRabItem[]) {
 }
 
 export default function ExpensesPage() {
+  const { isAdmin } = useAuth();
   const [expenses, setExpenses] = useState<SerializedExpense[]>([]);
   const [summary, setSummary] = useState<{ total: number; byCategory: { category: string; amount: number }[] } | null>(null);
   const [variances, setVariances] = useState<BudgetVariance[]>([]);
@@ -574,20 +576,29 @@ export default function ExpensesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={openImportModal}
-            className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            <FileUp className="h-4 w-4" />
-            Import Excel
-          </button>
-          <button
-            onClick={handleOpenAdd}
-            className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            <Plus className="h-4 w-4" />
-            Catat Transaksi
-          </button>
+          {isAdmin ? (
+            <>
+              <button
+                onClick={openImportModal}
+                className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                <FileUp className="h-4 w-4" />
+                Import Excel
+              </button>
+              <button
+                onClick={handleOpenAdd}
+                className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                <Plus className="h-4 w-4" />
+                Catat Transaksi
+              </button>
+            </>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 dark:bg-blue-950/40 dark:border-blue-900/40 dark:text-blue-300 text-xs font-semibold">
+              <Receipt className="h-3.5 w-3.5" />
+              Mode Hanya Lihat
+            </div>
+          )}
         </div>
       </div>
 
@@ -814,14 +825,20 @@ export default function ExpensesPage() {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center justify-center gap-1 opacity-80 group-hover:opacity-100">
-                          <button onClick={() => handleOpenEdit(item)}
-                            className="p-1.5 rounded-md hover:bg-zinc-100 text-zinc-500 dark:hover:bg-zinc-800" title="Edit">
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </button>
-                          <button onClick={() => handleDelete(item.id)}
-                            className="p-1.5 rounded-md hover:bg-rose-50 text-rose-500 dark:hover:bg-zinc-800" title="Hapus">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {isAdmin ? (
+                            <>
+                              <button onClick={() => handleOpenEdit(item)}
+                                className="p-1.5 rounded-md hover:bg-zinc-100 text-zinc-500 dark:hover:bg-zinc-800" title="Edit">
+                                <Edit3 className="h-3.5 w-3.5" />
+                              </button>
+                              <button onClick={() => handleDelete(item.id)}
+                                className="p-1.5 rounded-md hover:bg-rose-50 text-rose-500 dark:hover:bg-zinc-800" title="Hapus">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-xs text-zinc-400 font-mono">-</span>
+                          )}
                         </div>
                       </td>
                     </tr>

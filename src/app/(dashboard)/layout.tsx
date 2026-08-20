@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
 import {
   LayoutDashboard,
   FileText,
@@ -12,7 +13,13 @@ import {
   Menu,
   X,
   Building2,
-  User,
+  ShieldCheck,
+  Eye,
+  KeyRound,
+  Loader2,
+  LogOut,
+  AlertCircle,
+  Lock,
 } from "lucide-react";
 
 interface SidebarItem {
@@ -30,13 +37,38 @@ const navigation: SidebarItem[] = [
   { name: "Laporan", shortName: "Laporan", href: "/reports", icon: BarChart3 },
 ];
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [adminPin, setAdminPin] = useState("");
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  const { role, isAdmin, loading, loginAdmin, logout } = useAuth();
+
+  const handleAdminSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminPin) return;
+
+    setPinLoading(true);
+    setPinError(null);
+    try {
+      const res = await loginAdmin(adminPin);
+      if (!res.success) {
+        setPinError(res.message);
+        setPinLoading(false);
+        return;
+      }
+      setPinModalOpen(false);
+      setAdminPin("");
+    } catch (err) {
+      console.error(err);
+      setPinError("Gagal verifikasi PIN.");
+    } finally {
+      setPinLoading(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -77,21 +109,60 @@ export default function DashboardLayout({
           })}
         </nav>
 
-        {/* User Profile Footer */}
-        <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
-          <div className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-              <User className="h-4 w-4" />
+        {/* User Role Card & Footer */}
+        <div className="border-t border-zinc-200 p-4 dark:border-zinc-800 space-y-3">
+          <div className={`p-3 rounded-xl border ${
+            isAdmin
+              ? "bg-amber-50/70 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/40"
+              : "bg-zinc-50 border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800"
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className={`text-xs font-bold flex items-center gap-1.5 ${
+                isAdmin ? "text-amber-700 dark:text-amber-400" : "text-zinc-600 dark:text-zinc-400"
+              }`}>
+                {isAdmin ? (
+                  <>
+                    <ShieldCheck className="h-4 w-4" />
+                    Admin (Akses Penuh)
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-4 w-4 text-blue-500" />
+                    Akun Umum (Lihat)
+                  </>
+                )}
+              </span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-zinc-950 dark:text-zinc-50 truncate">Project Manager</p>
-              <p className="text-[10px] text-zinc-500 truncate dark:text-zinc-400">pm@buildtracker.com</p>
-            </div>
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+              {isAdmin ? "Bisa input, edit & hapus data" : "Mode pemantau & unduh laporan"}
+            </p>
+
+            {isAdmin ? (
+              <button
+                onClick={() => logout()}
+                className="mt-2.5 w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold text-zinc-700 bg-white border border-zinc-200 hover:bg-zinc-100 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-750 transition-colors"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Mode Tamu
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setPinError(null);
+                  setAdminPin("");
+                  setPinModalOpen(true);
+                }}
+                className="mt-2.5 w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 shadow-xs transition-colors"
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                Masuk sebagai Admin
+              </button>
+            )}
           </div>
         </div>
       </aside>
 
-      {/* Mobile Drawer (Overlay and Menu) */}
+      {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="relative z-50 md:hidden">
           <div 
@@ -133,6 +204,35 @@ export default function DashboardLayout({
                 );
               })}
             </nav>
+
+            {/* Mobile Role Switch */}
+            <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-800">
+              {isAdmin ? (
+                <button
+                  onClick={() => {
+                    logout();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-semibold text-zinc-700 bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-300"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Keluar dari Mode Admin
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setPinError(null);
+                    setAdminPin("");
+                    setPinModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-bold text-white bg-amber-600"
+                >
+                  <KeyRound className="h-4 w-4" />
+                  Masuk sebagai Admin
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -149,19 +249,44 @@ export default function DashboardLayout({
             <Menu className="h-6 w-6" />
           </button>
           
-          <h1 className="md:hidden text-lg font-extrabold text-emerald-600 dark:text-emerald-500 tracking-tight truncate">
-            Proyek Gedung TPA
+          <h1 className="md:hidden text-base font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight truncate">
+            BuildTracker Pro
           </h1>
           
           <div className="flex flex-1 gap-x-4 self-stretch items-center justify-end">
-            <div className="flex items-center gap-x-4 lg:gap-x-6">
-              {/* Notification icon / Dark mode / Info */}
-              <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800" aria-hidden="true" />
-              <div className="flex items-center gap-2">
-                <span className="hidden lg:inline-flex text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-1 rounded-sm">
-                  Aktif: Pembangunan Gedung TPA Nurul Hikmah
-                </span>
+            <div className="flex items-center gap-x-3">
+              {/* Role Header Badge */}
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
+                isAdmin
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                  : "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
+              }`}>
+                {isAdmin ? (
+                  <>
+                    <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
+                    <span className="hidden sm:inline">Peran:</span> Admin
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-3.5 w-3.5 text-blue-600" />
+                    <span className="hidden sm:inline">Peran:</span> Akun Umum (Lihat)
+                  </>
+                )}
               </div>
+
+              {!isAdmin && (
+                <button
+                  onClick={() => {
+                    setPinError(null);
+                    setAdminPin("");
+                    setPinModalOpen(true);
+                  }}
+                  className="hidden sm:inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 rounded-lg shadow-xs transition-colors"
+                >
+                  <KeyRound className="h-3.5 w-3.5" />
+                  PIN Admin
+                </button>
+              )}
             </div>
           </div>
         </header>
@@ -194,6 +319,80 @@ export default function DashboardLayout({
           );
         })}
       </nav>
+
+      {/* ── Quick PIN Admin Modal ────────────────────────────────────────── */}
+      {pinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-xs">
+          <div className="relative w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500">
+                  <Lock className="h-5 w-5" />
+                </div>
+                <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-50">
+                  Masuk sebagai Admin
+                </h3>
+              </div>
+              <button
+                onClick={() => setPinModalOpen(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAdminSubmit} className="space-y-4">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Masukkan PIN Admin 6-digit untuk mengaktifkan izin Tambah, Edit, Hapus, dan Import data.
+              </p>
+
+              {pinError && (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{pinError}</span>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <input
+                  type="password"
+                  maxLength={6}
+                  value={adminPin}
+                  onChange={(e) => setAdminPin(e.target.value.replace(/\D/g, ""))}
+                  placeholder="PIN 6 digit"
+                  autoFocus
+                  className="w-full text-center tracking-[0.5em] font-mono text-base py-2.5 px-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPinModalOpen(false)}
+                  className="flex-1 py-2 px-3 text-xs font-semibold rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={pinLoading || adminPin.length < 6}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 disabled:opacity-50"
+                >
+                  {pinLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verifikasi"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthProvider>
+      <DashboardLayoutContent>{children}</DashboardLayoutContent>
+    </AuthProvider>
   );
 }

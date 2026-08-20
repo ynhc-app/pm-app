@@ -11,6 +11,7 @@ import {
   ComponentCategory,
   ProjectSummary,
 } from "@/app/actions/rab";
+import { useAuth } from "@/lib/auth-context";
 import {
   Plus,
   Edit3,
@@ -98,6 +99,7 @@ function formatRp(val: number): string {
 }
 
 export default function RabPage() {
+  const { isAdmin } = useAuth();
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [rabItems, setRabItems] = useState<SerializedRabItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -439,7 +441,7 @@ export default function RabPage() {
             Kelola Bill of Quantities (BoQ) dengan rincian pos Material, Upah Tukang, Peralatan, dan Overhead (AHSP).
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <button
             onClick={fetchData}
             disabled={loading}
@@ -448,13 +450,20 @@ export default function RabPage() {
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
-          <button
-            onClick={() => handleAddClick()}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            <Plus className="h-4 w-4" />
-            Tambah Item RAB
-          </button>
+          {isAdmin ? (
+            <button
+              onClick={() => handleAddClick()}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              <Plus className="h-4 w-4" />
+              Tambah Item RAB
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 dark:bg-blue-950/40 dark:border-blue-900/40 dark:text-blue-300 text-xs font-semibold">
+              <Eye className="h-3.5 w-3.5" />
+              Mode Hanya Lihat
+            </div>
+          )}
         </div>
       </div>
 
@@ -662,29 +671,43 @@ export default function RabPage() {
                       </td>
                       <td className="p-4 align-top">
                         <div className="flex items-center justify-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
-                          {isCategory && (
-                            <button
-                              onClick={() => handleAddClick(item)}
-                              className="p-1.5 rounded-md hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-50"
-                              title="Tambah Sub-Item"
-                            >
-                              <FolderPlus className="h-3.5 w-3.5" />
-                            </button>
+                          {isAdmin ? (
+                            <>
+                              {isCategory && (
+                                <button
+                                  onClick={() => handleAddClick(item)}
+                                  className="p-1.5 rounded-md hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-50"
+                                  title="Tambah Sub-Item"
+                                >
+                                  <FolderPlus className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleEditClick(item)}
+                                className="p-1.5 rounded-md hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-50"
+                                title="Edit Item & Rincian"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteClick(item.id)}
+                                className="p-1.5 rounded-md hover:bg-zinc-150 text-rose-600 hover:text-rose-900 dark:hover:bg-zinc-800 dark:text-rose-450 dark:hover:text-rose-300"
+                                title="Hapus Item"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            hasComponents && (
+                              <button
+                                onClick={() => setViewingDetailItem(item)}
+                                className="p-1.5 rounded-md hover:bg-blue-50 text-blue-600 dark:hover:bg-blue-950/40 dark:text-blue-400"
+                                title="Lihat Rincian AHSP"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                            )
                           )}
-                          <button
-                            onClick={() => handleEditClick(item)}
-                            className="p-1.5 rounded-md hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-50"
-                            title="Edit Item & Rincian"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteClick(item.id)}
-                            className="p-1.5 rounded-md hover:bg-zinc-150 text-rose-600 hover:text-rose-900 dark:hover:bg-zinc-800 dark:text-rose-450 dark:hover:text-rose-300"
-                            title="Hapus Item"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1221,17 +1244,19 @@ export default function RabPage() {
 
             {/* Footer */}
             <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-2 bg-zinc-50/50 dark:bg-zinc-900/50">
-              <button
-                onClick={() => {
-                  const target = viewingDetailItem;
-                  setViewingDetailItem(null);
-                  handleEditClick(target);
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-zinc-900 bg-white border border-zinc-300 rounded-lg hover:bg-zinc-50 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                Edit Rincian Ini
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    const target = viewingDetailItem;
+                    setViewingDetailItem(null);
+                    handleEditClick(target);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-zinc-900 bg-white border border-zinc-300 rounded-lg hover:bg-zinc-50 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
+                >
+                  <Edit3 className="h-3.5 w-3.5" />
+                  Edit Rincian Ini
+                </button>
+              )}
               <button
                 onClick={() => setViewingDetailItem(null)}
                 className="px-4 py-2 text-xs font-semibold text-white bg-zinc-900 rounded-lg hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950"

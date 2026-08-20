@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { getOrCreateDefaultProject } from "./rab";
+import { requireAdmin } from "./auth";
 
 export interface ProgressLogEntry {
   id: string;
@@ -78,6 +79,7 @@ export async function saveWeeklyProgress(
   logDate: string,
   entries: { rabItemId: string; progressPercentage: number }[]
 ) {
+  await requireAdmin();
   const logDateObj = new Date(logDate);
 
   // Upsert each entry

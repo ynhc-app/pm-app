@@ -27,9 +27,12 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  Lock,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
 export default function MonitoringPage() {
+  const { isAdmin } = useAuth();
   const [sCurveData, setSCurveData] = useState<SCurveDataPoint[]>([]);
   const [loggedWeeks, setLoggedWeeks] = useState<number[]>([]);
   const [loadingChart, setLoadingChart] = useState(true);
@@ -322,6 +325,13 @@ export default function MonitoringPage() {
         </div>
 
         <div className="p-6">
+          {!isAdmin && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
+              <Lock className="h-4 w-4 shrink-0" />
+              <p>Anda sedang dalam <strong>Mode Akun Umum (Lihat Saja)</strong>. Untuk menginput atau memperbarui progres fisik mingguan, silakan masuk sebagai <strong>Admin</strong>.</p>
+            </div>
+          )}
+
           {formError && (
             <div className="mb-4 flex items-center gap-2 rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-400">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -367,17 +377,25 @@ export default function MonitoringPage() {
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="0.1"
-                              value={progressInputs[item.id] !== undefined ? progressInputs[item.id] : ""}
-                              onChange={(e) => handleProgressChange(item.id, e.target.value)}
-                              className="w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm text-right focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-                              placeholder="0"
-                            />
-                            <span className="text-zinc-400 font-medium">%</span>
+                            {isAdmin ? (
+                              <>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.1"
+                                  value={progressInputs[item.id] !== undefined ? progressInputs[item.id] : ""}
+                                  onChange={(e) => handleProgressChange(item.id, e.target.value)}
+                                  className="w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm text-right focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                                  placeholder="0"
+                                />
+                                <span className="text-zinc-400 font-medium">%</span>
+                              </>
+                            ) : (
+                              <span className="font-mono text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                                {progressInputs[item.id] !== undefined ? progressInputs[item.id] : 0}%
+                              </span>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -386,16 +404,18 @@ export default function MonitoringPage() {
                 </table>
               </div>
               
-              <div className="mt-6 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={savingForm}
-                  className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-                >
-                  {savingForm ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Simpan Progres Minggu Ke-{selectedWeek}
-                </button>
-              </div>
+              {isAdmin && (
+                <div className="mt-6 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={savingForm}
+                    className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+                  >
+                    {savingForm ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Simpan Progres Minggu Ke-{selectedWeek}
+                  </button>
+                </div>
+              )}
             </form>
           )}
         </div>

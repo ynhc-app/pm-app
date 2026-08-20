@@ -156,36 +156,50 @@ export default function ReportsPage() {
       const pageWidth = doc.internal.pageSize.getWidth();
 
       // Header helper function
-      const renderHeader = (title: string) => {
+      const renderHeader = (title: string, subHeaderLine?: string) => {
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
+        doc.setFontSize(13);
         doc.setTextColor(24, 24, 27); // zinc-900
-        doc.text(title.toUpperCase(), pageWidth / 2, 14, { align: "center" });
+        doc.text(title.toUpperCase(), pageWidth / 2, 13, { align: "center" });
 
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
+        doc.setFontSize(8.5);
         doc.setTextColor(113, 113, 122); // zinc-500
         doc.text(
           `Proyek: ${project.name}  |  Klien: ${project.clientName}`,
           pageWidth / 2,
-          19,
+          18,
           { align: "center" }
         );
-        doc.text(`Waktu Cetak: ${displayDate}`, pageWidth / 2, 23.5, {
+
+        let currentY = 22;
+        if (subHeaderLine) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(37, 99, 235); // blue-600
+          doc.text(subHeaderLine, pageWidth / 2, currentY, { align: "center" });
+          currentY += 4.5;
+        }
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(113, 113, 122);
+        doc.text(`Waktu Cetak: ${displayDate}`, pageWidth / 2, currentY, {
           align: "center",
         });
 
         // Horizontal Line
         doc.setDrawColor(228, 228, 231); // zinc-200
         doc.setLineWidth(0.4);
-        doc.line(14, 26, pageWidth - 14, 26);
+        doc.line(14, currentY + 3, pageWidth - 14, currentY + 3);
+        return currentY + 7;
       };
 
       let filename = "";
 
       if (reportType === "variance") {
         filename = `Laporan_Varian_Biaya_${projName}_${fileTimestamp}.pdf`;
-        renderHeader("Laporan Varian Biaya Proyek (Cost Variance)");
+        const startY = renderHeader("Laporan Varian Biaya Proyek (Cost Variance)");
 
         const tableData = variances.map((v, i) => [
           i + 1,
@@ -204,7 +218,7 @@ export default function ReportsPage() {
         const totalRemaining = totalBudget - totalSpent;
 
         autoTable(doc, {
-          startY: 30,
+          startY: startY,
           head: [
             [
               "No",
@@ -266,66 +280,154 @@ export default function ReportsPage() {
         });
       } else if (reportType === "expenses") {
         filename = `Rekap_Pengeluaran_${projName}_${fileTimestamp}.pdf`;
-        renderHeader("Rekapitulasi Pengeluaran & Transaksi Proyek");
 
-        const tableData = expenses.map((e, i) => [
-          i + 1,
-          new Date(e.transactionDate).toLocaleDateString("id-ID"),
-          e.category,
-          e.vendorName,
-          e.rabItemDescription || "Pengeluaran Umum",
-          e.volume ? `${e.volume} ${e.unit || ""}` : "-",
-          formatRp(e.amount),
-        ]);
+        // Check if transactions all belong to one specific RAB item
+        const uniqueRabItems = Array.from(
+          new Set(expenses.map((e) => e.rabItemDescription).filter(Boolean))
+        );
+        const singleRabItem =
+          uniqueRabItems.length === 1 ? uniqueRabItems[0] : null;
+
+        const subHeader = singleRabItem
+          ? `Pos Pekerjaan RAB: ${singleRabItem}`
+          : undefined;
+
+        const startY = renderHeader(
+          "Rekapitulasi Pengeluaran & Transaksi Proyek",
+          subHeader
+        );
 
         const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
 
-        autoTable(doc, {
-          startY: 30,
-          head: [
-            [
-              "No",
-              "Tanggal",
-              "Kategori",
-              "Vendor / Supplier",
-              "Item RAB Terkait",
-              "Volume",
-              "Total Nominal",
+        if (singleRabItem) {
+          // Single RAB Item: omit repetitive column to give maximum space for vendor/uraian
+          const tableData = expenses.map((e, i) => [
+            i + 1,
+            new Date(e.transactionDate).toLocaleDateString("id-ID"),
+            e.category,
+            e.vendorName,
+            e.volume ? `${e.volume} ${e.unit || ""}` : "-",
+            formatRp(e.amount),
+          ]);
+
+          autoTable(doc, {
+            startY: startY,
+            head: [
+              [
+                "No",
+                "Tanggal",
+                "Kategori",
+                "Vendor / Supplier / Uraian",
+                "Volume",
+                "Total Nominal",
+              ],
             ],
-          ],
-          body: tableData,
-          foot: [
-            ["", "", "", "", "TOTAL PENGELUARAN", "", formatRp(totalExpenses)],
-          ],
-          theme: "striped",
-          headStyles: {
-            fillColor: [24, 24, 27],
-            textColor: [255, 255, 255],
-            fontSize: 8.5,
-            fontStyle: "bold",
-            halign: "center",
-          },
-          footStyles: {
-            fillColor: [244, 244, 245],
-            textColor: [24, 24, 27],
-            fontSize: 8.5,
-            fontStyle: "bold",
-          },
-          styles: {
-            fontSize: 8,
-            cellPadding: 2.2,
-          },
-          columnStyles: {
-            0: { halign: "center", cellWidth: 10 },
-            1: { halign: "center", cellWidth: 24 },
-            2: { halign: "center", cellWidth: 24 },
-            3: { halign: "left" },
-            4: { halign: "left" },
-            5: { halign: "center", cellWidth: 22 },
-            6: { halign: "right", cellWidth: 34 },
-          },
-          margin: { left: 14, right: 14 },
-        });
+            body: tableData,
+            foot: [
+              [
+                "",
+                "",
+                "",
+                "TOTAL KESELURUHAN PENGELUARAN",
+                "",
+                formatRp(totalExpenses),
+              ],
+            ],
+            theme: "striped",
+            headStyles: {
+              fillColor: [24, 24, 27],
+              textColor: [255, 255, 255],
+              fontSize: 8.5,
+              fontStyle: "bold",
+              halign: "center",
+            },
+            footStyles: {
+              fillColor: [244, 244, 245],
+              textColor: [24, 24, 27],
+              fontSize: 8.5,
+              fontStyle: "bold",
+            },
+            styles: {
+              fontSize: 8,
+              cellPadding: 2.5,
+            },
+            columnStyles: {
+              0: { halign: "center", cellWidth: 10 },
+              1: { halign: "center", cellWidth: 26 },
+              2: { halign: "center", cellWidth: 28 },
+              3: { halign: "left" },
+              4: { halign: "center", cellWidth: 24 },
+              5: { halign: "right", cellWidth: 38 },
+            },
+            margin: { left: 14, right: 14 },
+          });
+        } else {
+          // Multiple RAB Items
+          const tableData = expenses.map((e, i) => [
+            i + 1,
+            new Date(e.transactionDate).toLocaleDateString("id-ID"),
+            e.category,
+            e.vendorName,
+            e.rabItemDescription || "Umum",
+            e.volume ? `${e.volume} ${e.unit || ""}` : "-",
+            formatRp(e.amount),
+          ]);
+
+          autoTable(doc, {
+            startY: startY,
+            head: [
+              [
+                "No",
+                "Tanggal",
+                "Kategori",
+                "Vendor / Supplier / Uraian",
+                "Item RAB",
+                "Volume",
+                "Total Nominal",
+              ],
+            ],
+            body: tableData,
+            foot: [
+              [
+                "",
+                "",
+                "",
+                "",
+                "TOTAL",
+                "",
+                formatRp(totalExpenses),
+              ],
+            ],
+            theme: "striped",
+            headStyles: {
+              fillColor: [24, 24, 27],
+              textColor: [255, 255, 255],
+              fontSize: 8.5,
+              fontStyle: "bold",
+              halign: "center",
+            },
+            footStyles: {
+              fillColor: [244, 244, 245],
+              textColor: [24, 24, 27],
+              fontSize: 8.5,
+              fontStyle: "bold",
+            },
+            styles: {
+              fontSize: 8,
+              cellPadding: 2.2,
+            },
+            columnStyles: {
+              0: { halign: "center", cellWidth: 10 },
+              1: { halign: "center", cellWidth: 24 },
+              2: { halign: "center", cellWidth: 24 },
+              3: { halign: "left" },
+              4: { halign: "left", cellWidth: 42 },
+              5: { halign: "center", cellWidth: 20 },
+              6: { halign: "right", cellWidth: 34 },
+            },
+            margin: { left: 14, right: 14 },
+          });
+        }
       } else if (reportType === "rab") {
         filename = `Master_RAB_AHSP_${projName}_${fileTimestamp}.pdf`;
         renderHeader("Master Anggaran Biaya (RAB) & Rincian AHSP");
